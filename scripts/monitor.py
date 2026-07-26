@@ -12,7 +12,7 @@ Literature Monitor — Новиков В.А.
 только в нужный день ± 3 суток, что экономит запросы и не пропускает номера.
 """
 
-import os, json, time, datetime, urllib.request, urllib.parse, re
+import os, json, time, datetime, urllib.request, urllib.parse, urllib.error, re
 import xml.etree.ElementTree as ET
 
 # ════════════════════════════════════════════════════════════════════════
@@ -457,6 +457,25 @@ def analyze_batch(articles: list) -> list:
                         "abstract_ru": item.get("abstract_ru",""),
                         "key_points":  item.get("key_points",[]),
                     })
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                print(f"  [Claude error] batch {i//batch_size+1}: 401 Unauthorized — "
+                      "ключ неверный или это заглушка. Анализ прерван.")
+                print("      Проверьте ANTHROPIC_API_KEY (нужен реальный ключ с "
+                      "console.anthropic.com) и запустите снова.")
+                for art in articles:
+                    art.setdefault("relevance",5)
+                    art.setdefault("summary_ru","(ключ неверный — анализ не выполнялся)")
+                    art.setdefault("why_relevant","")
+                    art.setdefault("read_full",True)
+                    art.setdefault("abstract_ru",""); art.setdefault("key_points",[])
+                return articles   # нет смысла долбить API ещё 29 раз тем же ключом
+            print(f"  [Claude error] batch {i//batch_size+1}: HTTP {e.code}")
+            for art in batch:
+                art.setdefault("relevance",5)
+                art.setdefault("summary_ru",art.get("abstract","")[:300] or "(нет аннотации)")
+                art.setdefault("why_relevant","Ошибка анализа")
+                art.setdefault("read_full",True)
         except Exception as e:
             print(f"  [Claude error] batch {i//batch_size+1}: {e}")
             for art in batch:
@@ -619,12 +638,19 @@ def preflight():
         print("      Установите:  pip install reportlab   (или pip3)")
 
     # API-ключ (нужен для анализа Claude)
-    key_ok = bool(ANTHROPIC_API_KEY)
-    if key_ok:
+    key = ANTHROPIC_API_KEY
+    looks_placeholder = bool(key) and ("..." in key or len(key) < 40)
+    key_ok = bool(key) and not looks_placeholder
+    if looks_placeholder:
+        print("  ANTHROPIC_API_KEY: похоже, это ЗАГЛУШКА, а не настоящий ключ.")
+        print('      Скорее всего вставлена строка-пример "sk-ant-...".')
+        print("      Настоящий ключ — длинная строка вида sk-ant-api03-XXXX... с")
+        print("      console.anthropic.com. Анализ Claude сейчас не выполнится (ошибка 401).")
+    elif key_ok:
         print("  ANTHROPIC_API_KEY: задан (анализ Claude включён)")
     else:
         print("  ANTHROPIC_API_KEY: НЕ задан — статьи соберутся, но без анализа/перевода.")
-        print('      Задайте:  export ANTHROPIC_API_KEY="sk-ant-..."  (macOS/Linux)')
+        print('      Задайте:  export ANTHROPIC_API_KEY="sk-ant-api03-..."  (macOS/Linux)')
 
     print("────────────────────────────────────────────────────────────\n")
     return {"pdf": pdf_ok, "key": key_ok}
