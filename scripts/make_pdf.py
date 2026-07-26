@@ -54,16 +54,55 @@ SOURCE_COLORS = {
 }
 
 # ─── Шрифты ───────────────────────────────────────────────────────────────────
+# Наборы шрифтов, поддерживающих кириллицу, в порядке предпочтения.
+# Каждый набор: (regular, bold, italic, bold-italic). Ищем на Linux, macOS и Windows;
+# берём первый, у которого нашлись все четыре файла. Helvetica — крайний случай:
+# она НЕ отображает кириллицу, поэтому при откате на неё печатаем предупреждение.
+_FONT_CANDIDATES = [
+    # DejaVu — Linux (пакет fonts-dejavu), а также Homebrew/ручная установка на macOS
+    ('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+     '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+     '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',
+     '/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf'),
+    # macOS — Arial (поддерживает кириллицу)
+    ('/System/Library/Fonts/Supplemental/Arial.ttf',
+     '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+     '/System/Library/Fonts/Supplemental/Arial Italic.ttf',
+     '/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf'),
+    ('/Library/Fonts/Arial.ttf',
+     '/Library/Fonts/Arial Bold.ttf',
+     '/Library/Fonts/Arial Italic.ttf',
+     '/Library/Fonts/Arial Bold Italic.ttf'),
+    # Windows — Arial
+    ('C:/Windows/Fonts/arial.ttf',
+     'C:/Windows/Fonts/arialbd.ttf',
+     'C:/Windows/Fonts/ariali.ttf',
+     'C:/Windows/Fonts/arialbi.ttf'),
+    # macOS/Linux — DejaVu через типовые дополнительные каталоги
+    ('/opt/homebrew/share/fonts/DejaVuSans.ttf',
+     '/opt/homebrew/share/fonts/DejaVuSans-Bold.ttf',
+     '/opt/homebrew/share/fonts/DejaVuSans-Oblique.ttf',
+     '/opt/homebrew/share/fonts/DejaVuSans-BoldOblique.ttf'),
+]
+
+
 def register_fonts():
-    try:
-        base = '/usr/share/fonts/truetype/dejavu/'
-        pdfmetrics.registerFont(TTFont('DV',     base + 'DejaVuSans.ttf'))
-        pdfmetrics.registerFont(TTFont('DV-B',   base + 'DejaVuSans-Bold.ttf'))
-        pdfmetrics.registerFont(TTFont('DV-I',   base + 'DejaVuSans-Oblique.ttf'))
-        pdfmetrics.registerFont(TTFont('DV-BI',  base + 'DejaVuSans-BoldOblique.ttf'))
-        return 'DV', 'DV-B', 'DV-I', 'DV-BI'
-    except Exception:
-        return 'Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique'
+    for reg, bold, ital, bi in _FONT_CANDIDATES:
+        if not all(os.path.exists(p) for p in (reg, bold, ital, bi)):
+            continue
+        try:
+            pdfmetrics.registerFont(TTFont('DV',    reg))
+            pdfmetrics.registerFont(TTFont('DV-B',  bold))
+            pdfmetrics.registerFont(TTFont('DV-I',  ital))
+            pdfmetrics.registerFont(TTFont('DV-BI', bi))
+            return 'DV', 'DV-B', 'DV-I', 'DV-BI'
+        except Exception:
+            continue
+    print('  [!] Шрифт с поддержкой кириллицы не найден — PDF будет свёрстан\n'
+          '      шрифтом Helvetica, и русский текст отобразится квадратами.\n'
+          '      Установите DejaVu:  Linux → sudo apt-get install fonts-dejavu\n'
+          '      macOS → brew install --cask font-dejavu   (или уже есть Arial)')
+    return 'Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique'
 
 F, FB, FI, FBI = register_fonts()
 

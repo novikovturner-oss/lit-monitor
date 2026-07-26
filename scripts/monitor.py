@@ -381,9 +381,14 @@ SYSTEM_PROMPT = """Ты — ассистент детского нейроорт
 
 def analyze_batch(articles: list) -> list:
     if not ANTHROPIC_API_KEY:
-        print("  [!] ANTHROPIC_API_KEY не задан")
+        print("  [!] ANTHROPIC_API_KEY не задан — анализ Claude пропущен.")
+        print("      Всем статьям проставлен нейтральный балл 5 без резюме и перевода.")
+        print("      Чтобы включить анализ, задайте ключ и запустите снова:")
+        print('        export ANTHROPIC_API_KEY="sk-ant-..."   (macOS/Linux)')
+        print('        setx ANTHROPIC_API_KEY "sk-ant-..."      (Windows, затем новый терминал)')
         for a in articles:
-            a.update({"relevance":5,"summary_ru":"(нет API-ключа)","why_relevant":"","read_full":True})
+            a.update({"relevance":5,"summary_ru":"(нет API-ключа — анализ не выполнялся)",
+                      "why_relevant":"","read_full":True,"abstract_ru":"","key_points":[]})
         return articles
     batch_size = 5
     for i in range(0, len(articles), batch_size):
@@ -592,9 +597,43 @@ def _load_module(name: str):
     return mod
 
 
+def preflight():
+    """Проверяет окружение перед запуском и печатает понятные подсказки.
+    Ничего не прерывает: скрипт работает и без ключа/reportlab, просто
+    с урезанным результатом. Возвращает словарь с флагами доступности."""
+    import sys
+    print("── Проверка окружения ──────────────────────────────────────")
+
+    # Python 3.8+
+    py_ok = sys.version_info >= (3, 8)
+    print(f"  Python {sys.version.split()[0]}: " + ("ок" if py_ok else "нужен 3.8+"))
+
+    # reportlab (нужен только для PDF)
+    try:
+        import reportlab  # noqa: F401
+        pdf_ok = True
+        print("  reportlab: установлен (PDF будет сгенерирован)")
+    except ImportError:
+        pdf_ok = False
+        print("  reportlab: НЕ установлен — PDF будет пропущен.")
+        print("      Установите:  pip install reportlab   (или pip3)")
+
+    # API-ключ (нужен для анализа Claude)
+    key_ok = bool(ANTHROPIC_API_KEY)
+    if key_ok:
+        print("  ANTHROPIC_API_KEY: задан (анализ Claude включён)")
+    else:
+        print("  ANTHROPIC_API_KEY: НЕ задан — статьи соберутся, но без анализа/перевода.")
+        print('      Задайте:  export ANTHROPIC_API_KEY="sk-ant-..."  (macOS/Linux)')
+
+    print("────────────────────────────────────────────────────────────\n")
+    return {"pdf": pdf_ok, "key": key_ok}
+
+
 def main():
     run_date = datetime.date.today().isoformat()
     print(f"=== Мониторинг литературы {run_date} ===")
+    preflight()
     print(schedule_summary(RSS_FEEDS))
 
     print("\n[1/5] PubMed...")
@@ -646,6 +685,9 @@ def main():
     try:
         make_pdf = _load_module("make_pdf")
         make_pdf.generate_pdf(new_arts, run_date, pdf_path)
+    except ImportError:
+        print("  [PDF] Пропущен: не установлен reportlab. Установите: pip install reportlab")
+        pdf_path = None
     except Exception as e:
         print(f"  [PDF] Пропущен: {e}")
         pdf_path = None
